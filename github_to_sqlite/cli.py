@@ -54,7 +54,11 @@ def auth(auth):
     type=click.Path(file_okay=True, dir_okay=False, allow_dash=True, exists=True),
     help="Load issues JSON from this file instead of the API",
 )
-def issues(db_path, repo, issue, auth, load):
+@click.option(
+    "--rev_req",
+    is_flag=True
+)
+def issues(db_path, repo, issue, auth, load, rev_req):
     "Save issues for a specified repository, e.g. simonw/datasette"
     db = sqlite_utils.Database(db_path)
     token = load_token(auth)
@@ -65,7 +69,14 @@ def issues(db_path, repo, issue, auth, load):
 
     issues = list(issues)
     utils.save_issues(db, issues)
-
+  
+    # Get PR reivews
+    if rev_req:
+        pulls = utils.is_open_pr(issues)
+        for pull in pulls:
+            reviews = utils.fetch_reviews(repo, token, pull)
+            reviews = list(reviews)
+            utils.save_reviews(db, reviews)
 
 @cli.command(name="issue-comments")
 @click.argument(

@@ -46,6 +46,39 @@ def save_issues(db, issues):
         for label in labels:
             table.m2m("labels", label, pk="id")
 
+def save_reviews(db, reviews):
+    if "reviews" not in db.table_names():
+        db["reviews"].create({"id": int}, pk="id")
+    for original in reviews:
+        # Ignore all of the _url fields
+        review = {
+            key: value for key, value in original.items() if not (key.endswith("url") or key.endswith("_links"))
+        }
+        pr_url = original["pull_request_url"].split("/")
+        # Add repo key
+        review["repo"] = "{}/{}".format(pr_url[-4], pr_url[-3])
+        # Add pull key
+        pr_num = pr_url[-1]
+        issue_rows = list(
+            db["issues"].rows_where(
+                "number = :number and repo = :repo",
+                {"repo": review["repo"], "number": pr_num},
+            )
+        )
+        if len(issue_rows) == 1:
+            review["pull_request"] = issue_rows[0]["id"]
+        # Extract user
+        review["user"] = save_user(db, review["user"])
+        # Insert Record
+        table = db["reviews"].upsert(
+            review,
+            pk="id",
+            foreign_keys=[
+                ("user", "users", "id"),
+                ("pull_request", "issues", "id"),
+            ],
+            alter=True,
+        )
 
 def save_user(db, user):
     # Remove all url fields except avatar_url and html_url
@@ -204,8 +237,13 @@ def fetch_all_repos(username=None, token=None):
     for repos in paginate(url, headers):
         yield from repos
 
+def fetch_reviews(repo, token=None, pull=None):
+    headers = make_headers(token)
+    url = "https://api.github.com/repos/{}/pulls/{}/reviews".format(repo, pull["number"])
+    for reviews in paginate(url, headers):
+        yield from reviews
 
-def fetch_user(username=None, token=None):
+def fetch_user(repo=None, token=None):
     assert username or token, "Must provide username= or token= or both"
     headers = make_headers(token)
     if username:
@@ -214,6 +252,12 @@ def fetch_user(username=None, token=None):
         url = "https://api.github.com/user"
     return requests.get(url, headers=headers).json()
 
+def is_open_pr(issues):
+    pulls = list()
+    for issue in issues:
+        if issue.get("state")=="open" and issue.get("pull_request"):
+            pulls.append(issue)
+    return pulls
 
 def paginate(url, headers=None):
     while url:

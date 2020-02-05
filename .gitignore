@@ -6,3 +6,8 @@ venv
 .eggs
 .pytest_cache
 *.egg-info
+.vscode
+test-env
+github-to-sqlite.py
+test.db
+auth.json
